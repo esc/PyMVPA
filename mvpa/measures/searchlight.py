@@ -64,70 +64,105 @@ class Searchlight(DatasetMeasure):
         self.__datameasure = datameasure
         self.__radius = radius
         self.__center_ids = center_ids
-
+        self.__searchlight_indexes = dict()
 
     __doc__ = enhancedDocString('Searchlight', locals(), DatasetMeasure)
 
-
-    def _call(self, dataset):
-        """Perform the spheresearch.
-        """
+    def __check_dataset_type(self, dataset):
+        """ check that the dataset is mapped and has a metric """
         if not isinstance(dataset, MappedDataset) \
                or dataset.mapper.metric is None:
             raise ValueError, "Searchlight only works with MappedDatasets " \
                               "that has metric assigned."
 
+    def __setup_housekeeping(self, dataset):
+        """ setup house keeping for state monitoring and debugging """
         if self.states.isEnabled('spheresizes'):
             self.spheresizes = []
-
-        if __debug__:
-            nspheres = dataset.nfeatures
-            sphere_count = 0
-
-        # collect the results in a list -- you never know what you get
-        results = []
 
         # decide whether to run on all possible center coords or just a provided
         # subset
         if not self.__center_ids == None:
-            generator = self.__center_ids
+            self.generator = self.__center_ids
         else:
-            generator = xrange(dataset.nfeatures)
+            self.generator = xrange(dataset.nfeatures)
+
+    def __get_searchlight_indexes(self, voxel_id, dataset):
+        """ lazily compute searchlight indexes """
+        # if the indexes for this voxel exist already return them
+        if self.__searchlight_indexes.has_key(voxel_id):
+            return self.__searchlight_indexes.get(voxel_id)
+        # otherwise compute it now, and store for later
+        else:
+            indexes = dataset.mapper.getNeighbors(voxel_id, self.__radius)
+            self.__searchlight_indexes[voxel_id] = indexes
+
+            # store the size of the sphere dataset
+            if self.states.isEnabled('spheresizes'):
+                self.spheresizes.append(indexes.nfeatures)
+
+            return indexes
+
+    def __single_dataset(self, dataset):
+        """ perform the searchlight on a single dataset """
+
+        if __debug__:
+            # FIXME what if __center_ids is set, in that case the number of
+            # spheres should be len(self.__center_ids)
+            self.nspheres = dataset.nfeatures
+            self.sphere_count = 0
+
+        # collect the results in a list -- you never know what you get
+        results = []
 
         # put spheres around all features in the dataset and compute the
         # measure within them
-        for f in generator:
-            sphere = dataset.selectFeatures(
-                dataset.mapper.getNeighbors(f, self.__radius),
-                plain=True)
+        for f in self.generator:
+            sphere = dataset.selectFeatures(self.__get_searchlight_indexes(f,
+                dataset), plain=True)
 
             # compute the datameasure and store in results
             measure = self.__datameasure(sphere)
             results.append(measure)
 
-            # store the size of the sphere dataset
-            if self.states.isEnabled('spheresizes'):
-                self.spheresizes.append(sphere.nfeatures)
-
             if __debug__:
-                sphere_count += 1
+                self.sphere_count += 1
                 debug('SLC', "Doing %i spheres: %i (%i features) [%i%%]" \
-                    % (nspheres,
-                       sphere_count,
+                    % (self.nspheres,
+                       self.sphere_count,
                        sphere.nfeatures,
-                       float(sphere_count)/nspheres*100,), cr=True)
+                       float(self.sphere_count)/self.nspheres*100, ), cr=True)
 
         if __debug__:
             debug('SLC', '')
+
+        return results
+
+    def __multiple_datasets(self, datasets):
+        """ perform the searchlight on multiple datasets, reusing the voxel
+        indices of the searchlights """
+        if __debug__:
+            debug('SLC', "Found %i datasets" % (len(datasets)))
+
+        return [self.__single_dataset(d) for d in datasets]
+
+    def _call(self, dataset):
+        """Perform the spheresearch. """
+        if isinstance(dataset, list):
+            # dataset is actually datasets
+            [self.__check_dataset_type(d) for d in dataset]
+            self.__setup_housekeeping(dataset[0])
+            results = self.__multiple_datasets(dataset)
+        else:
+            self.__check_dataset_type(dataset)
+            self.__setup_housekeeping(dataset)
+            results = self.__single_dataset(dataset)
 
         # charge state
         self.raw_results = results
 
         # return raw results, base-class will take care of transformations
         return results
-
-
-
 
 #class OptimalSearchlight( object ):
 #    def __init__( self,
