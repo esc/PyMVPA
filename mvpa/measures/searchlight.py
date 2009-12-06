@@ -80,6 +80,13 @@ class Searchlight(DatasetMeasure):
         if self.states.isEnabled('spheresizes'):
             self.spheresizes = []
 
+        if __debug__:
+            if not self.__center_ids == None:
+                self.nspheres = len(self.__center_ids)
+            else:
+                self.nspheres = dataset.nfeatures
+
+
         # decide whether to run on all possible center coords or just a provided
         # subset
         if not self.__center_ids == None:
@@ -107,9 +114,7 @@ class Searchlight(DatasetMeasure):
         """ perform the searchlight on a single dataset """
 
         if __debug__:
-            # FIXME what if __center_ids is set, in that case the number of
-            # spheres should be len(self.__center_ids)
-            self.nspheres = dataset.nfeatures
+            # need to reset sphere count for each dataset
             self.sphere_count = 0
 
         # collect the results in a list -- you never know what you get
