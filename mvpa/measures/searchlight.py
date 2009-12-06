@@ -119,7 +119,7 @@ class Searchlight(DatasetMeasure):
         # measure within them
         for f in self.generator:
             sphere = dataset.selectFeatures(self.__get_searchlight_indexes(f,
-                dataset), plain=True)
+                dataset), sort=False, plain=True)
 
             # compute the datameasure and store in results
             measure = self.__datameasure(sphere)
